@@ -1,6 +1,7 @@
 ---
 title: Sample
 ---
+
 # Hello LMRT
 
 This is a **sample** document. It has a [link](https://example.com) and `inline code`.
@@ -11,9 +12,9 @@ This is a **sample** document. It has a [link](https://example.com) and `inline 
 > A quoted line.
 
 ```js
-console.log("skipped");
+console.log('skipped');
 ```
 
 | Name | Role |
-|---|---|
-| Ann | Dev |
+| ---- | ---- |
+| Ann  | Dev  |

@@ -1,0 +1,5 @@
+node_modules/
+coverage/
+package-lock.json
+# Whitespace in its text is read by the tests and the panel; formatting would change the button labels.
+panel.html

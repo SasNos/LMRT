@@ -1,4 +1,4 @@
-import { MAX_CHUNK_LENGTH } from "./constants.js";
+import { MAX_CHUNK_LENGTH } from './constants.js';
 
 // Speech engines stall on long utterances, so text is spoken in short chunks.
 export function splitText(text, maxLength = MAX_CHUNK_LENGTH) {
@@ -7,7 +7,7 @@ export function splitText(text, maxLength = MAX_CHUNK_LENGTH) {
   for (const sentence of sentences) {
     let rest = sentence;
     while (rest.length > maxLength) {
-      let cut = rest.lastIndexOf(" ", maxLength);
+      let cut = rest.lastIndexOf(' ', maxLength);
       if (cut <= 0) cut = maxLength;
       chunks.push(rest.slice(0, cut).trim());
       rest = rest.slice(cut).trim();

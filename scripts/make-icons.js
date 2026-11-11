@@ -1,6 +1,6 @@
 // Generates icons/16|32|48|128.png: accent circle with a white play triangle. Run: node scripts/make-icons.js
-import { deflateSync } from "node:zlib";
-import { mkdirSync, writeFileSync } from "node:fs";
+import { deflateSync } from 'node:zlib';
+import { mkdirSync, writeFileSync } from 'node:fs';
 
 const crcTable = Array.from({ length: 256 }, (_, n) => {
   let c = n;
@@ -39,8 +39,13 @@ function png(size) {
   header.writeUInt32BE(size, 0);
   header.writeUInt32BE(size, 4);
   header.set([8, 6, 0, 0, 0], 8);
-  return Buffer.concat([Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]), chunk("IHDR", header), chunk("IDAT", deflateSync(raw)), chunk("IEND", Buffer.alloc(0))]);
+  return Buffer.concat([
+    Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]),
+    chunk('IHDR', header),
+    chunk('IDAT', deflateSync(raw)),
+    chunk('IEND', Buffer.alloc(0)),
+  ]);
 }
 
-mkdirSync("icons", { recursive: true });
+mkdirSync('icons', { recursive: true });
 for (const size of [16, 32, 48, 128]) writeFileSync(`icons/${size}.png`, png(size));
