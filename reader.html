@@ -16,14 +16,13 @@
         <button id="toggle" type="button" disabled>Play</button>
         <button id="next" type="button" disabled>Next</button>
         <button id="stop" type="button" disabled>Stop</button>
-        <label
-          >Speed <input id="rate" type="range" min="0.5" max="3" step="0.1" value="1" />
-          <output id="rate-out">1.0×</output></label
-        >
+        <label>Speed <input id="rate" type="range" /> <output id="rate-out">1.0×</output></label>
         <label
           >Voice
           <select id="voice"></select
         ></label>
+        <button id="install" type="button" hidden></button>
+        <button id="remove" type="button" hidden>Remove voice</button>
       </div>
     </header>
     <p id="status" class="status" role="status" aria-live="polite">Open or drop a Markdown file to start.</p>

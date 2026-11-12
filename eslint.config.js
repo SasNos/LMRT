@@ -3,7 +3,7 @@ import js from '@eslint/js';
 import globals from 'globals';
 
 export default [
-  { ignores: ['node_modules/', 'coverage/'] },
+  { ignores: ['node_modules/', 'coverage/', 'dist/'] },
   js.configs.recommended,
   {
     languageOptions: {
@@ -19,7 +19,7 @@ export default [
     },
   },
   {
-    files: ['test/**/*.js', 'scripts/**/*.js', 'eslint.config.js'],
+    files: ['test/**/*.js', 'scripts/**/*.{js,mjs}', 'eslint.config.js'],
     languageOptions: { globals: { ...globals.node } },
   },
 ];

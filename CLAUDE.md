@@ -1,6 +1,6 @@
 # LMRT (let me read this) – notes for Claude
 
-Chrome-only extension (MV3), plain ES modules, no build step. Reads text files aloud with the browser's own speech voices. See [README.md](README.md) and [docs/STATUS.md](docs/STATUS.md).
+Chrome-only extension (MV3), plain ES modules. Reads text files aloud with the browser's own speech voices or with neural voices (Piper, Kokoro). The page itself needs no build; the neural engines are bundled into `dist/` by `npm run build`. See [README.md](README.md) and [docs/STATUS.md](docs/STATUS.md).
 
 ## User rules (global)
 
@@ -16,9 +16,12 @@ Chrome-only extension (MV3), plain ES modules, no build step. Reads text files a
 - Look: colours, radius and fonts from Anime Link Finder (`panel.css`), as allowed by the user on 2026-11-11. Rules in `reader.css` use variables only; the values live in `:root`.
 - Speech: Web Speech API (`speechSynthesis`), text spoken in short chunks (`MAX_CHUNK_LENGTH`) because engines stall on long utterances. Code blocks are shown, never spoken.
 
+- Neural voices (user, 2026-11-11: installing models afterwards is fine): Piper for German, Kokoro for English and others. Models are never bundled in the repository; the user installs a voice with a click, from `huggingface.co` only, and every file is checked against a pinned SHA-256 (`npm run pin` is `node scripts/pin-voices.js`; it downloads about 1 GB). Kokoro runs only on WebGPU (CPU measured slower than real time). The heavy engines are built into `dist/` (`npm run build`, gitignored); the app works without `dist/` using the system voices.
+- Chrome's Cache API refuses entries above about 256 MB, so the Kokoro model lives in the origin private file system (`engines/opfs-cache.js`, set as `env.customCache` of transformers.js).
+
 ## Not verified yet
 
-- Loading the unpacked extension in Chrome (toolbar click), audible output, drag and drop, screen reader, measured contrast.
+- Loading the unpacked extension in Chrome (toolbar click, CSP, WebGPU and downloads from the extension origin), audible output, drag and drop, screen reader, measured contrast.
 
 ## Shared standards of the Spark tools (2026-11-10)
 

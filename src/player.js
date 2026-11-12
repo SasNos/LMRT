@@ -26,7 +26,7 @@ export function createPlayer({ synth, createUtterance, onState }) {
       emit();
       return;
     }
-    const utterance = createUtterance(chunks[index].text);
+    const utterance = createUtterance(chunks[index].text, voice);
     utterance.rate = rate;
     if (voice) utterance.voice = voice;
     utterance.onend = () => {
@@ -42,6 +42,8 @@ export function createPlayer({ synth, createUtterance, onState }) {
     status = 'playing';
     emit();
     synth.speak(utterance);
+    const next = chunks[index + 1];
+    if (next && synth.prefetch) synth.prefetch({ text: next.text, voice, rate });
   }
 
   return {

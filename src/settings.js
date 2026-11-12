@@ -17,7 +17,3 @@ export function normalizeSettings(raw) {
     voiceUri: isObject && typeof data.voiceUri === 'string' ? data.voiceUri.slice(0, 200) : '',
   };
 }
-
-export function findVoice(voices, voiceUri) {
-  return voices.find((voice) => voice.voiceURI === voiceUri) ?? null;
-}

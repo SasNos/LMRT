@@ -120,3 +120,22 @@ test('rate and voice apply to the next utterance and restart a playing one', () 
   player.setVoice(null);
   assert.equal(spoken[2].voice, undefined);
 });
+
+test('createUtterance receives the voice; the next chunk is prefetched when the synth supports it', () => {
+  const prefetched = [];
+  const created = [];
+  const synth = { speak() {}, cancel() {}, pause() {}, resume() {}, prefetch: (next) => prefetched.push(next) };
+  const player = createPlayer({
+    synth,
+    createUtterance: (text, voice) => (created.push([text, voice]), {}),
+    onState() {},
+  });
+  player.load([{ text: 'a' }, { text: 'b' }]);
+  player.setVoice({ id: 'v', neural: true });
+  player.setRate(2);
+  player.play();
+  assert.deepEqual(created[0], ['a', { id: 'v', neural: true }]);
+  assert.deepEqual(prefetched, [{ text: 'b', voice: { id: 'v', neural: true }, rate: 2 }]);
+  player.play(1);
+  assert.equal(prefetched.length, 1, 'no prefetch after the last chunk');
+});
