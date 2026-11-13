@@ -1,6 +1,6 @@
 {
   "name": "lmrt",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "private": true,
   "type": "module",
   "description": "Chrome extension (let me read this): reads text files aloud. Starts with Markdown.",

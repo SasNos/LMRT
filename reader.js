@@ -66,6 +66,10 @@ const player = createPlayer({
   synth,
   createUtterance: (text, voice) => (voice?.neural ? { text } : new SpeechSynthesisUtterance(text)),
   onState: render,
+  schedule: (fn, ms) => {
+    const timer = setTimeout(fn, ms);
+    return () => clearTimeout(timer);
+  },
 });
 
 function render({ status, index, total, chunk }) {

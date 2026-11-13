@@ -7,18 +7,27 @@ export function clampRate(value) {
 }
 
 // Plays chunks one after another. The speech API is injected so it can be faked.
-export function createPlayer({ synth, createUtterance, onState }) {
+// `schedule(fn, ms)` runs fn after ms and returns a function that cancels it (setTimeout in the browser).
+export function createPlayer({ synth, createUtterance, onState, schedule }) {
+  if (typeof schedule !== 'function') throw new TypeError('createPlayer needs a schedule function');
   let chunks = [];
   let index = 0;
   let status = 'idle';
   let generation = 0;
   let rate = DEFAULT_RATE;
   let voice = null;
+  let cancelWait = null;
 
   const emit = () => onState({ status, index, total: chunks.length, chunk: chunks[index] ?? null });
 
+  function clearWait() {
+    cancelWait?.();
+    cancelWait = null;
+  }
+
   function speakCurrent() {
     const mine = (generation += 1);
+    clearWait();
     synth.cancel();
     if (index >= chunks.length) {
       index = 0;
@@ -31,8 +40,15 @@ export function createPlayer({ synth, createUtterance, onState }) {
     if (voice) utterance.voice = voice;
     utterance.onend = () => {
       if (mine !== generation) return;
+      const pause = chunks[index].pause ?? 0;
       index += 1;
-      speakCurrent();
+      if (pause > 0 && index < chunks.length) {
+        // The display already shows the chunk that comes next; speed, voice and seek act on it.
+        emit();
+        cancelWait = schedule(speakCurrent, pause / rate);
+      } else {
+        speakCurrent();
+      }
     };
     utterance.onerror = () => {
       if (mine !== generation) return;
@@ -49,6 +65,7 @@ export function createPlayer({ synth, createUtterance, onState }) {
   return {
     load(next) {
       generation += 1;
+      clearWait();
       synth.cancel();
       chunks = next;
       index = 0;
@@ -62,18 +79,23 @@ export function createPlayer({ synth, createUtterance, onState }) {
     },
     pause() {
       if (status !== 'playing') return;
-      synth.pause();
+      if (cancelWait) cancelWait();
+      else synth.pause();
       status = 'paused';
       emit();
     },
     resume() {
       if (status !== 'paused') return;
-      synth.resume();
       status = 'playing';
-      emit();
+      if (cancelWait) speakCurrent();
+      else {
+        synth.resume();
+        emit();
+      }
     },
     stop() {
       generation += 1;
+      clearWait();
       synth.cancel();
       index = 0;
       status = 'idle';

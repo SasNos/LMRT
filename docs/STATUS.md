@@ -1,5 +1,18 @@
 # Status
 
+## 13 November 2026: pauses and trimmed silence (0.3.0)
+
+- The reader now sets the pauses itself: 200 ms between the sentences of one block, after the end of a block 700 ms (heading), 450 ms (paragraph, quote) or 250 ms (list item, table row); divided by the speed. Pieces cut out of a long sentence get no pause, the last chunk never waits. During a pause the display already shows the next chunk, so speed, voice and seek act on it; Pause and Stop work during a pause (`schedule` is injected into the player, `setTimeout` in `reader.js`).
+- Measured with the real Thorsten medium model in Node (onnxruntime-web, the project's own phonemizer and mapping): every Piper chunk carries about 0.23-0.26 s of silence on both sides, so the gap between two sentences was already about 0.5 s. `src/trim.js` now cuts samples below 1 % of the peak and keeps 30 ms on each side (verified on real output: 30 ms left). Pitch (autocorrelation, 40 ms frames) of Thorsten medium: mean 117-131 Hz, standard deviation 16-29 Hz, p10-p90 about 91-170 Hz; the noise settings 0.3, 0.5, 0.667 and 0.8 changed none of that clearly, so the melody is mostly the voice itself.
+- The chunking change of 0.2.1 (cut only at . ! ? and the ellipsis, long sentences at a comma) was never committed on its own and ships in this version.
+- Left on purpose: the pauses also apply to system voices, which keep their own silence on top (the constants are tuned on Thorsten medium); `schedule` stays a required option of the player.
+- Tested: new tests for pauses (player, chunker) and `trim`, `npm run check` (75 tests, 100 %), `npm run build`. Not tested: how the pauses sound in Chrome, other voices than Thorsten medium in the probe.
+
+## 12 November 2026: chunking for a natural melody (0.2.1)
+
+- User feedback: the neural voices sound unpleasant in stress and melody. Chunks no longer end at colons and semicolons (only at . ! ? and the ellipsis), and a sentence longer than `MAX_CHUNK_LENGTH` is cut at a comma in its second half before any other space. The Piper phoneme mapping was compared with the phonemizer's own ids for Thorsten medium: identical for a single sentence.
+- Tested: two new chunker tests (red first), `npm run check` (65 tests, 100 %), `npm run build`. Not tested: whether this is audibly better; `code-review`, `simplify` and `security-review` not yet run for this small change (run with the next batch). Other likely causes not yet tried: Piper noise and length settings, other voices, pauses at headings and list items.
+
 ## 12 November 2026: review fixes (0.2.0)
 
 - Pause while a chunk is still being synthesized now holds the audio until resume; an error thrown while starting playback reaches `onerror`; the stand-in for an uninstalled neural voice follows its language; Kokoro no longer needs `shader-f16` (it runs fp32) and `env.allowRemoteModels` is off, so a cache miss cannot fetch unpinned files; `remainingBytes` errors are caught.

@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createNeuralSynth } from '../src/neural-synth.js';
+import { trimSilence } from '../src/trim.js';
 
 const tick = () => new Promise((resolve) => setImmediate(resolve));
 
@@ -129,4 +130,18 @@ test('cancel clears a pending pause', async () => {
   synth.speak(utterance('b'));
   await tick();
   assert.equal(plays.length, 1);
+});
+
+test('leading and trailing silence of a synthesized chunk is trimmed before it plays', async () => {
+  const padded = new Float32Array(1000);
+  padded.fill(0.5, 400, 500);
+  const plays = [];
+  const synth = createNeuralSynth({
+    synthesize: () => Promise.resolve({ samples: padded, sampleRate: 1000 }),
+    audio: { play: (samples) => (plays.push(samples), { stop() {} }), pause() {}, resume() {} },
+  });
+  synth.speak({ text: 'a', voice: { id: 'v' }, rate: 1, onend() {}, onerror() {} });
+  await tick();
+  assert.deepEqual(plays[0], trimSilence(padded, 1000));
+  assert.ok(plays[0].length < padded.length);
 });

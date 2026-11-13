@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { clampRate, createPlayer } from '../src/player.js';
 
-function setup(texts = ['a', 'b', 'c']) {
+function setup(texts = ['a', 'b', 'c'], pauses = []) {
   const spoken = [];
   const calls = [];
   const states = [];
@@ -12,9 +12,24 @@ function setup(texts = ['a', 'b', 'c']) {
     pause: () => calls.push('pause'),
     resume: () => calls.push('resume'),
   };
-  const player = createPlayer({ synth, createUtterance: (text) => ({ text }), onState: (s) => states.push(s) });
-  player.load(texts.map((text, i) => ({ text, blockIndex: i })));
-  return { player, spoken, calls, states, last: () => states.at(-1) };
+  const timers = [];
+  const schedule = (fn, ms) => {
+    const timer = { fn, ms, cancelled: false };
+    timers.push(timer);
+    return () => {
+      timer.cancelled = true;
+    };
+  };
+  const player = createPlayer({
+    synth,
+    createUtterance: (text) => ({ text }),
+    onState: (s) => states.push(s),
+    schedule,
+  });
+  player.load(
+    texts.map((text, i) => ({ text, blockIndex: i, ...(pauses[i] === undefined ? {} : { pause: pauses[i] }) })),
+  );
+  return { player, spoken, calls, states, timers, last: () => states.at(-1) };
 }
 
 test('clampRate bounds and sanitises', () => {
@@ -129,6 +144,7 @@ test('createUtterance receives the voice; the next chunk is prefetched when the 
     synth,
     createUtterance: (text, voice) => (created.push([text, voice]), {}),
     onState() {},
+    schedule: () => () => {},
   });
   player.load([{ text: 'a' }, { text: 'b' }]);
   player.setVoice({ id: 'v', neural: true });
@@ -138,4 +154,84 @@ test('createUtterance receives the voice; the next chunk is prefetched when the 
   assert.deepEqual(prefetched, [{ text: 'b', voice: { id: 'v', neural: true }, rate: 2 }]);
   player.play(1);
   assert.equal(prefetched.length, 1, 'no prefetch after the last chunk');
+});
+
+test('a pause after a chunk delays the next one, scaled by the rate', () => {
+  const { player, spoken, timers } = setup(['a', 'b'], [400]);
+  player.setRate(2);
+  player.play();
+  spoken[0].onend();
+  assert.equal(spoken.length, 1);
+  assert.equal(timers[0].ms, 200);
+  timers[0].fn();
+  assert.equal(spoken[1].text, 'b');
+});
+
+test('pausing during the wait holds the next chunk until resume, without touching the speech engine', () => {
+  const { player, spoken, timers, calls, last } = setup(['a', 'b'], [400]);
+  player.play();
+  spoken[0].onend();
+  const before = calls.length;
+  player.pause();
+  assert.equal(timers[0].cancelled, true);
+  assert.equal(last().status, 'paused');
+  assert.equal(spoken.length, 1);
+  player.resume();
+  assert.equal(spoken[1].text, 'b');
+  assert.deepEqual(
+    calls.slice(before).filter((c) => c !== 'cancel'),
+    [],
+  );
+});
+
+test('stop during the wait cancels the timer', () => {
+  const { player, spoken, timers, last } = setup(['a', 'b'], [400]);
+  player.play();
+  spoken[0].onend();
+  player.stop();
+  assert.equal(timers[0].cancelled, true);
+  assert.equal(last().status, 'idle');
+  assert.equal(spoken.length, 1);
+});
+
+test('the last chunk never waits', () => {
+  const { player, spoken, timers, last } = setup(['a'], [400]);
+  player.play();
+  spoken[0].onend();
+  assert.equal(timers.length, 0);
+  assert.equal(last().status, 'idle');
+});
+
+test('during the wait the display already shows the upcoming chunk', () => {
+  const { player, spoken, last } = setup(['a', 'b', 'c'], [400, 400]);
+  player.play();
+  spoken[0].onend();
+  assert.equal(last().index, 1);
+  assert.equal(last().chunk.text, 'b');
+});
+
+test('speed or voice change during the wait does not repeat the finished chunk', () => {
+  const { player, spoken, timers } = setup(['a', 'b'], [400]);
+  player.play();
+  spoken[0].onend();
+  player.setRate(1.5);
+  assert.deepEqual(
+    spoken.map((u) => u.text),
+    ['a', 'b'],
+  );
+  assert.equal(timers[0].cancelled, true);
+  player.setVoice({ name: 'x' });
+  assert.equal(spoken.at(-1).text, 'b');
+});
+
+test('seek during the wait is relative to the upcoming chunk', () => {
+  const { player, spoken } = setup(['a', 'b', 'c', 'd'], [400, 400, 400]);
+  player.play();
+  spoken[0].onend();
+  player.seek(1);
+  assert.equal(spoken.at(-1).text, 'c');
+});
+
+test('a player without a schedule function is rejected up front', () => {
+  assert.throws(() => createPlayer({ synth: {}, createUtterance: () => ({}), onState() {} }), /schedule/);
 });

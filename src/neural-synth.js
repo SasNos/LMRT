@@ -1,5 +1,7 @@
 // Speech API for neural voices: same shape as speechSynthesis (speak, cancel, pause, resume).
 // `synthesize(text, voice, speed)` resolves to { samples, sampleRate }; `audio` plays them.
+import { trimSilence } from './trim.js';
+
 export function createNeuralSynth({ synthesize, audio }) {
   let generation = 0;
   let handle = null;
@@ -7,6 +9,9 @@ export function createNeuralSynth({ synthesize, audio }) {
   let paused = false;
   let held = null;
 
+  // Trimmed as soon as the chunk is ready, so a prefetched chunk pays for it while the previous one plays.
+  const synthesizeTrimmed = (text, voice, speed) =>
+    synthesize(text, voice, speed).then((data) => ({ ...data, samples: trimSilence(data.samples, data.sampleRate) }));
   const key = (text, voice, speed) => `${voice.id}|${speed}|${text}`;
   const start = (text, voice, speed) => {
     const k = key(text, voice, speed);
@@ -15,7 +20,7 @@ export function createNeuralSynth({ synthesize, audio }) {
       cached = null;
       return promise;
     }
-    return synthesize(text, voice, speed);
+    return synthesizeTrimmed(text, voice, speed);
   };
 
   return {
@@ -60,7 +65,7 @@ export function createNeuralSynth({ synthesize, audio }) {
     },
     // Synthesizes the next chunk while the current one plays, so there is no gap.
     prefetch({ text, voice, rate }) {
-      const promise = synthesize(text, voice, rate);
+      const promise = synthesizeTrimmed(text, voice, rate);
       promise.catch(() => {});
       cached = { key: key(text, voice, rate), promise };
     },
