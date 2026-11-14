@@ -145,3 +145,29 @@ test('leading and trailing silence of a synthesized chunk is trimmed before it p
   assert.deepEqual(plays[0], trimSilence(padded, 1000));
   assert.ok(plays[0].length < padded.length);
 });
+
+test('a chunk change keeps the prefetched job alive; a jump elsewhere drops it in the engine', async () => {
+  const aborts = [];
+  const raws = [];
+  const synth = createNeuralSynth({
+    synthesize: () => {
+      raws.push(Promise.resolve({ samples: new Float32Array(4), sampleRate: 8 }));
+      return raws.at(-1);
+    },
+    audio: { play: () => ({ stop() {} }), pause() {}, resume() {} },
+    abort: (keep) => aborts.push(keep),
+  });
+  const u = (text) => ({ text, voice: { id: 'v' }, rate: 1, onend() {}, onerror() {} });
+  synth.prefetch({ text: 'b', voice: { id: 'v' }, rate: 1 });
+  synth.cancel();
+  synth.speak(u('b'));
+  await tick();
+  assert.equal(raws.length, 1, 'the prefetched chunk is used');
+  assert.deepEqual(aborts, [raws[0]], 'cancel spares the prefetched job');
+  synth.prefetch({ text: 'c', voice: { id: 'v' }, rate: 1 });
+  synth.cancel();
+  synth.speak(u('x'));
+  await tick();
+  assert.equal(raws.length, 3);
+  assert.deepEqual(aborts.slice(1), [raws[1], undefined], 'the stale prefetch is dropped before the jump');
+});

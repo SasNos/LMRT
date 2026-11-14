@@ -1,9 +1,10 @@
 {
   "manifest_version": 3,
   "name": "LMRT",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "description": "Reads text files aloud. Starts with Markdown (.md).",
-  "content_security_policy": { "extension_pages": "script-src 'self' 'wasm-unsafe-eval'; object-src 'self'" },
+  "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAo8uHFn/JXA5ZACo8nGaGkvrbu7/BytXFDJTe5ss/L70q9JkriTIDxQumvjLh/HUulTDcZ8Bt9VvB94whyN7LzmoS3d9VxfcuYr5fmxTOZMqMOKZ06Z2tMqC2gs79JnRvKO0mGM7/u/S/nnLssxYNl1crklTjQohh9vIEdXcGokjLHDpa42WYvZ5FQyO0PzQ7GrubDspsjJuCYiMMa1sDfAowyek6g28iXt97YZ1AWvhbNolvua6o0skxXxHnk9JRUfUrbdLKk7Td9CTdtGm+1RUU31DwMIi1l+JbAlk4TlJ07QX6fJjFJ7SnkW8RqdP5nzvP9yfb93mFERCSlL46DwIDAQAB",
+  "permissions": ["nativeMessaging"],
   "action": { "default_title": "Open LMRT" },
   "background": { "service_worker": "background.js" },
   "icons": { "16": "icons/16.png", "32": "icons/32.png", "48": "icons/48.png", "128": "icons/128.png" }

@@ -1,5 +1,14 @@
 # Status
 
+## 14 November 2026: Pocket TTS through a native host, Piper and Kokoro removed (0.4.0)
+
+- Following Letter's TTS decision (user, 2026-11-14): Piper and Kokoro are gone (both need espeak-ng, GPL-3.0), with them the download, checksum and storage code, the build step (`dist/`, esbuild) and the WebAssembly CSP. A German Kokoro version (Kerstin, Martin) was built and measured but not committed; its patch is kept outside the repository.
+- New: Pocket TTS voices through Native Messaging. `src/pocket.js` (client, checks every host message: status, PCM chunks, errors; reconnects after the host stopped), `src/voices.js` (Pocket TTS voices from the host status, then system voices), `src/native-host.js` (host name, extension id from the manifest key, host manifest), `host/lmrt_tts_host.py` and `.bat` (bridge to Letter's `tts_server.py`), `scripts/install-host.mjs`. `manifest.json` has a fixed `key` and only the `nativeMessaging` permission.
+- Measured with the registered host (Node speaking Native Messaging to the `.bat`): status after 0.16 s lists `juergen`; a voice name like `../evil` is refused; the engine starts in 8.4 s (Python and model), the first sentence (2.1 s of speech) is done 2.1 s later; the host and the engine end when stdin closes.
+- Reviews: code-review led to cancel reaching the engine (stop, seek and voice changes; the prefetched next chunk is spared), errors without a sentence shown, the host ending when the engine dies, and host tests (they found `true` accepted as a request id). simplify: the host passes engine lines on without re-encoding, voice ids via `voiceId`, warm-up once per voice. security-review: no findings. Left: Pocket TTS audio plays per sentence, not per streamed chunk (time to first sound = synthesis time of the sentence).
+- Tested: `npm run check` (86 tests, 100 % line, branch and function coverage of `src/`), new tests for the client (garbage from the host, odd PCM, disconnect with reason, cancel), voices, extension id and host manifest, manifest permissions; `test/host.test.js` drives `host/lmrt_tts_host.py` with a fake runtime (needs Python on PATH; three runs in a row green). Not unit-tested (OS bindings, exclusion): `host/lmrt_tts_host.bat`, `scripts/install-host.mjs`, `reader.js`, `engines/audio.js`.
+- Not tested: the extension in real Chrome (Native Messaging from the extension page, audible output), English voices (none installed in Letter), Chrome profiles other than the default registry key, other browsers.
+
 ## 13 November 2026: pauses and trimmed silence (0.3.0)
 
 - The reader now sets the pauses itself: 200 ms between the sentences of one block, after the end of a block 700 ms (heading), 450 ms (paragraph, quote) or 250 ms (list item, table row); divided by the speed. Pieces cut out of a long sentence get no pause, the last chunk never waits. During a pause the display already shows the next chunk, so speed, voice and seek act on it; Pause and Stop work during a pause (`schedule` is injected into the player, `setTimeout` in `reader.js`).
@@ -51,10 +60,9 @@
 
 ## Open work
 
-1. Load the unpacked extension in Chrome (after `npm run build`) and listen to a real file with each engine.
+1. Load the unpacked extension in Chrome and listen to a real file with a Pocket TTS voice and with a system voice.
 2. More formats (`.txt`, `.html`, `.json`, ...): one parser each in `src/`, registered in `FORMATS`.
 3. Keyboard shortcuts (space, arrows) and a language filter for the voice list; pick the voice from the language of the file.
-4. Move the pure parts of `engines/install.js` into `src/` with tests.
-5. Stream downloads into a preallocated buffer (peak memory of the Kokoro model).
-6. Reuse the phonemizer module between chunks; drop the ONNX session of a removed voice.
-7. Spark integration: not decided; LMRT has no `spark.json` (it is a page tool, not a content script).
+4. Speed for Pocket TTS voices (time stretching without changing the pitch); today the speed applies to the system voices only.
+5. One shared source for the Pocket TTS runtime of all apps (Letter's open point); LMRT reuses Letter's folder until then.
+6. Spark integration: not decided; LMRT has no `spark.json` (it is a page tool, not a content script).

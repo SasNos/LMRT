@@ -6,9 +6,10 @@ import { MAX_RATE, MIN_RATE, RATE_STEP, SETTINGS_KEY } from './src/constants.js'
 import { normalizeSettings } from './src/settings.js';
 import { createNeuralSynth } from './src/neural-synth.js';
 import { createRouterSynth } from './src/router-synth.js';
-import { buildVoiceOptions, pickDefaultVoice, resolveVoice, voiceSize } from './src/voices.js';
+import { buildVoiceOptions, pickDefaultVoice, pocketVoices, resolveVoice, voiceId } from './src/voices.js';
+import { CANCELLED, createPocketClient } from './src/pocket.js';
+import { HOST_NAME } from './src/native-host.js';
 import { createAudio } from './engines/audio.js';
-import { installVoice, installedVoiceIds, remainingBytes, removeVoice } from './engines/install.js';
 
 const $ = (id) => document.getElementById(id);
 const els = {
@@ -20,8 +21,6 @@ const els = {
   rate: $('rate'),
   rateOut: $('rate-out'),
   voice: $('voice'),
-  install: $('install'),
-  remove: $('remove'),
   status: $('status'),
   doc: $('doc'),
 };
@@ -41,23 +40,29 @@ let chunks = [];
 let currentBlock = -1;
 let playerStatus = 'idle';
 
-let installed = new Set();
-let hasWebGpu = false;
+let pocket = [];
 
-// The heavy engine (onnxruntime and the phonemizer) is only loaded when a neural voice speaks.
+// Pocket TTS runs in the native host (host/, registered by `npm run install-host`), started by Chrome on first use.
+const pocketClient = createPocketClient({
+  connect: () => chrome.runtime.connectNative(HOST_NAME),
+  reason: () => chrome.runtime.lastError?.message,
+  onError: (message) => {
+    els.status.textContent = `Voice error: ${message}`;
+  },
+});
+
 const synth = createRouterSynth({
   system: speechSynthesis,
   neural: createNeuralSynth({
     audio: createAudio(),
-    synthesize: async (text, voice, speed) => {
-      try {
-        const engine = await import(voice.engine === 'kokoro' ? './dist/kokoro.js' : './dist/piper.js');
-        return await engine.synthesize(text, voice, speed);
-      } catch (error) {
-        console.error(error);
-        els.status.textContent = `Voice error: ${error.message}. Run "npm run build" if dist/ is missing.`;
-        throw error;
-      }
+    abort: () => pocketClient.cancelAll(),
+    // The client's own promise is returned: the synth keeps the prefetched one alive by identity.
+    synthesize: (text, voice) => {
+      const spoken = pocketClient.synthesize(text, voice);
+      spoken.catch((error) => {
+        if (error.message !== CANCELLED) els.status.textContent = `Voice error: ${error.message}`;
+      });
+      return spoken;
     },
   }),
 });
@@ -138,66 +143,43 @@ function saveSettings() {
 }
 
 function selectedVoice() {
-  return resolveVoice(els.voice.value, speechSynthesis.getVoices(), hasWebGpu);
+  return resolveVoice(els.voice.value, speechSynthesis.getVoices(), pocket);
 }
 
-// A neural voice that is not installed yet is never spoken: the system voice stands in until it is.
+// Loading a Pocket TTS voice takes seconds, so it starts when the voice is chosen (once per voice).
+const warmed = new Set();
 function applyVoice() {
   const voice = selectedVoice();
-  const needsInstall = Boolean(voice?.neural) && !installed.has(voice.id);
-  els.install.hidden = !needsInstall;
-  els.remove.hidden = !voice?.neural || needsInstall;
-  if (needsInstall) {
-    const label = (bytes) => `Install voice (${Math.round(bytes / 1e6)} MB from huggingface.co)`;
-    els.install.textContent = label(voiceSize(voice));
-    // Part of the files may already be stored (the Kokoro model is shared by its voices).
-    remainingBytes(voice)
-      .then((bytes) => {
-        if (selectedVoice() === voice) els.install.textContent = label(bytes);
-      })
-      .catch(() => {});
+  player.setVoice(voice);
+  if (voice?.neural && !warmed.has(voice.id)) {
+    warmed.add(voice.id);
+    pocketClient.warm(voice);
   }
-  player.setVoice(needsInstall ? pickDefaultVoice(speechSynthesis.getVoices(), installed, voice.lang) : voice);
 }
 
 function fillVoices() {
   const systemVoices = speechSynthesis.getVoices();
-  const options = buildVoiceOptions(systemVoices, installed, hasWebGpu);
   els.voice.replaceChildren(
-    ...options.map(({ id, label, lang }) => {
+    ...buildVoiceOptions(systemVoices, pocket).map(({ id, label, lang }) => {
       const option = new Option(label, id);
       option.lang = lang;
       return option;
     }),
   );
-  const saved = resolveVoice(settings.voiceUri, systemVoices, hasWebGpu);
-  const chosen = saved ?? pickDefaultVoice(systemVoices, installed, navigator.language);
-  els.voice.value = chosen ? (chosen.neural ? chosen.id : chosen.voiceURI) : '';
+  const chosen =
+    resolveVoice(settings.voiceUri, systemVoices, pocket) ?? pickDefaultVoice(systemVoices, pocket, navigator.language);
+  els.voice.value = chosen ? voiceId(chosen) : '';
   applyVoice();
 }
 
-async function refreshInstalled() {
-  const adapter = await navigator.gpu?.requestAdapter?.().catch(() => null);
-  // Kokoro runs in full precision (fp32) on the GPU: WebGPU is enough.
-  hasWebGpu = Boolean(adapter);
-  installed = await installedVoiceIds();
-  fillVoices();
-}
-
-async function runVoiceTask(task, doneMessage) {
-  const voice = selectedVoice();
-  els.install.disabled = true;
-  els.remove.disabled = true;
+// Without the host (not registered, Letter's runtime missing) only the system voices are listed.
+async function loadPocketVoices() {
   try {
-    await task(voice);
-    els.status.textContent = doneMessage(voice);
-  } catch (error) {
-    els.status.textContent = `Voice task failed: ${error.message}`;
-  } finally {
-    els.install.disabled = false;
-    els.remove.disabled = false;
-    await refreshInstalled();
+    pocket = pocketVoices(await pocketClient.status());
+  } catch {
+    pocket = [];
   }
+  fillVoices();
 }
 
 els.file.addEventListener('change', () => els.file.files[0] && openFile(els.file.files[0]));
@@ -219,16 +201,6 @@ els.voice.addEventListener('change', () => {
   applyVoice();
   saveSettings();
 });
-els.install.addEventListener('click', () =>
-  runVoiceTask(
-    (voice) =>
-      installVoice(voice, (loaded, total) => {
-        els.status.textContent = `Downloading voice: ${Math.round((100 * loaded) / total)} %`;
-      }),
-    (voice) => `Voice installed: ${voice.name}`,
-  ),
-);
-els.remove.addEventListener('click', () => runVoiceTask(removeVoice, (voice) => `Voice removed: ${voice.name}`));
 
 for (const type of ['dragenter', 'dragover']) {
   document.addEventListener(type, (event) => {
@@ -250,4 +222,4 @@ els.rateOut.textContent = `${settings.rate.toFixed(1)}×`;
 player.setRate(settings.rate);
 speechSynthesis.addEventListener('voiceschanged', fillVoices);
 fillVoices();
-refreshInstalled();
+loadPocketVoices();

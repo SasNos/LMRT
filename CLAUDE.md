@@ -1,6 +1,6 @@
 # LMRT (let me read this) – notes for Claude
 
-Chrome-only extension (MV3), plain ES modules. Reads text files aloud with the browser's own speech voices or with neural voices (Piper, Kokoro). The page itself needs no build; the neural engines are bundled into `dist/` by `npm run build`. See [README.md](README.md) and [docs/STATUS.md](docs/STATUS.md).
+Chrome-only extension (MV3), plain ES modules, no build step. Reads text files aloud with the browser's own speech voices or with Pocket TTS through a native host (`host/`). See [README.md](README.md) and [docs/STATUS.md](docs/STATUS.md).
 
 ## User rules (global)
 
@@ -11,17 +11,17 @@ Chrome-only extension (MV3), plain ES modules. Reads text files aloud with the b
 
 ## Decisions
 
-- Name LMRT, repository `SasNos/LMRT`, folder `Tools\Spark\Extensions\LMRT` (user, 2026-11-11). Works as a Chrome extension; it opens its own reader tab (no permissions, no host access).
+- Name LMRT, repository `SasNos/LMRT`, folder `Tools\Spark\Extensions\LMRT` (user, 2026-11-11). Works as a Chrome extension; it opens its own reader tab (only the `nativeMessaging` permission, no host access).
 - Starts with Markdown (`.md`, `.markdown`); every further text format is one entry in `FORMATS` in `src/files.js` (user, 2026-11-11: "for the start .md is enough").
 - Look: colours, radius and fonts from Anime Link Finder (`panel.css`), as allowed by the user on 2026-11-11. Rules in `reader.css` use variables only; the values live in `:root`.
 - Speech: Web Speech API (`speechSynthesis`), text spoken in short chunks (`MAX_CHUNK_LENGTH`) because engines stall on long utterances. Code blocks are shown, never spoken.
 
-- Neural voices (user, 2026-11-11: installing models afterwards is fine): Piper for German, Kokoro for English and others. Models are never bundled in the repository; the user installs a voice with a click, from `huggingface.co` only, and every file is checked against a pinned SHA-256 (`npm run pin` is `node scripts/pin-voices.js`; it downloads about 1 GB). Kokoro runs only on WebGPU (CPU measured slower than real time). The heavy engines are built into `dist/` (`npm run build`, gitignored); the app works without `dist/` using the system voices.
-- Chrome's Cache API refuses entries above about 256 MB, so the Kokoro model lives in the origin private file system (`engines/opfs-cache.js`, set as `env.customCache` of transformers.js).
+- Neural voices (user, 2026-11-14, decision document of Letter): Pocket TTS (Kyutai, weights CC BY 4.0, attribution in the README) on the CPU, reused from Letter's runtime in `%LOCALAPPDATA%\Artisan\Letter\tts` (installed by Letter, not by LMRT). Piper and Kokoro were removed: both need espeak-ng (GPL-3.0) and GPL obligations are avoided. Chatterbox, Qwen3-TTS, Fish Audio S2 Pro and cloud services were checked and rejected (see Letter's decision). The system voices stay as the fallback.
+- A Chrome extension cannot start programs, so Chrome starts the native host through Native Messaging: `host/lmrt_tts_host.bat` runs `host/lmrt_tts_host.py` with Letter's Python; it answers `status` (installed voices) and passes `speak`, `warm` and `cancel` to Letter's `tts_server.py`. `npm run install-host` copies `host/` to `%LOCALAPPDATA%\Artisan\LMRT\host`, writes the host manifest and the registry key `HKCU\Software\Google\Chrome\NativeMessagingHosts\de.sasnos.lmrt.tts` (no admin). The `key` in `manifest.json` fixes the extension id (`mgjcikhmlbjjcokjlmllldoiclliadoi`), which the host manifest allows; changing the key breaks the voice host. The extension asks only for `nativeMessaging`.
 
 ## Not verified yet
 
-- Loading the unpacked extension in Chrome (toolbar click, CSP, WebGPU and downloads from the extension origin), audible output, drag and drop, screen reader, measured contrast.
+- Loading the unpacked extension in Chrome (toolbar click, Native Messaging from the extension), audible output in Chrome, drag and drop, screen reader, measured contrast.
 
 ## Shared standards of the Spark tools (2026-11-10)
 

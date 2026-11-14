@@ -1,8 +1,10 @@
 // Speech API for neural voices: same shape as speechSynthesis (speak, cancel, pause, resume).
-// `synthesize(text, voice, speed)` resolves to { samples, sampleRate }; `audio` plays them.
+// `synthesize(text, voice, speed)` resolves to { samples, sampleRate }; `audio` plays them. The prefetch is keyed by
+// voice, speed and text.
 import { trimSilence } from './trim.js';
 
-export function createNeuralSynth({ synthesize, audio }) {
+// `abort(keep)` (optional) stops the engine's work for chunks that are no longer wanted, except the promise `keep`.
+export function createNeuralSynth({ synthesize, audio, abort }) {
   let generation = 0;
   let handle = null;
   let cached = null;
@@ -10,8 +12,7 @@ export function createNeuralSynth({ synthesize, audio }) {
   let held = null;
 
   // Trimmed as soon as the chunk is ready, so a prefetched chunk pays for it while the previous one plays.
-  const synthesizeTrimmed = (text, voice, speed) =>
-    synthesize(text, voice, speed).then((data) => ({ ...data, samples: trimSilence(data.samples, data.sampleRate) }));
+  const trimmed = (raw) => raw.then((data) => ({ ...data, samples: trimSilence(data.samples, data.sampleRate) }));
   const key = (text, voice, speed) => `${voice.id}|${speed}|${text}`;
   const start = (text, voice, speed) => {
     const k = key(text, voice, speed);
@@ -20,7 +21,10 @@ export function createNeuralSynth({ synthesize, audio }) {
       cached = null;
       return promise;
     }
-    return synthesizeTrimmed(text, voice, speed);
+    // A jump to another chunk: the prefetched one is not needed any more.
+    if (cached) abort?.();
+    cached = null;
+    return trimmed(synthesize(text, voice, speed));
   };
 
   return {
@@ -46,6 +50,8 @@ export function createNeuralSynth({ synthesize, audio }) {
     },
     cancel() {
       generation += 1;
+      // The player cancels before every chunk; the prefetched next chunk stays wanted.
+      abort?.(cached?.raw);
       held = null;
       paused = false;
       handle?.stop();
@@ -65,9 +71,10 @@ export function createNeuralSynth({ synthesize, audio }) {
     },
     // Synthesizes the next chunk while the current one plays, so there is no gap.
     prefetch({ text, voice, rate }) {
-      const promise = synthesizeTrimmed(text, voice, rate);
+      const raw = synthesize(text, voice, rate);
+      const promise = trimmed(raw);
       promise.catch(() => {});
-      cached = { key: key(text, voice, rate), promise };
+      cached = { key: key(text, voice, rate), promise, raw };
     },
   };
 }

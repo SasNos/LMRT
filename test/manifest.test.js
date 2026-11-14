@@ -7,11 +7,10 @@ const manifest = read('manifest.json');
 const pkg = read('package.json');
 const lock = read('package-lock.json');
 
-test('extension pages may compile WebAssembly but not run eval or remote scripts', () => {
-  const csp = manifest.content_security_policy.extension_pages;
-  const scriptSrc = csp.split(';').find((d) => d.trim().startsWith('script-src'));
-  assert.deepEqual(scriptSrc.trim().split(/\s+/).slice(1), ["'self'", "'wasm-unsafe-eval'"]);
-  assert.doesNotMatch(csp, /'unsafe-eval'|https?:/);
+test('the extension asks only for Native Messaging and keeps the default script policy', () => {
+  assert.deepEqual(manifest.permissions, ['nativeMessaging']);
+  assert.equal(manifest.host_permissions, undefined);
+  assert.equal(manifest.content_security_policy, undefined);
 });
 
 test('manifest and package share one version', () => {
