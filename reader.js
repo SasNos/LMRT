@@ -2,8 +2,14 @@
 import { buildChunks } from './src/chunker.js';
 import { ACCEPT, checkFile } from './src/files.js';
 import { createPlayer } from './src/player.js';
-import { SETTINGS_KEY } from './src/constants.js';
-import { findVoice, normalizeSettings } from './src/settings.js';
+import { MAX_RATE, MIN_RATE, RATE_STEP, SETTINGS_KEY } from './src/constants.js';
+import { normalizeSettings } from './src/settings.js';
+import { createNeuralSynth } from './src/neural-synth.js';
+import { createRouterSynth } from './src/router-synth.js';
+import { buildVoiceOptions, pickDefaultVoice, pocketVoices, resolveVoice, voiceId } from './src/voices.js';
+import { CANCELLED, createPocketClient } from './src/pocket.js';
+import { HOST_NAME } from './src/native-host.js';
+import { createAudio } from './engines/audio.js';
 
 const $ = (id) => document.getElementById(id);
 const els = {
@@ -19,6 +25,9 @@ const els = {
   doc: $('doc'),
 };
 els.file.accept = ACCEPT;
+els.rate.min = String(MIN_RATE);
+els.rate.max = String(MAX_RATE);
+els.rate.step = String(RATE_STEP);
 
 const MESSAGES = {
   unsupported: `Unsupported file. Supported: ${ACCEPT}`,
@@ -31,10 +40,41 @@ let chunks = [];
 let currentBlock = -1;
 let playerStatus = 'idle';
 
+let pocket = [];
+
+// Pocket TTS runs in the native host (host/, registered by `npm run install-host`), started by Chrome on first use.
+const pocketClient = createPocketClient({
+  connect: () => chrome.runtime.connectNative(HOST_NAME),
+  reason: () => chrome.runtime.lastError?.message,
+  onError: (message) => {
+    els.status.textContent = `Voice error: ${message}`;
+  },
+});
+
+const synth = createRouterSynth({
+  system: speechSynthesis,
+  neural: createNeuralSynth({
+    audio: createAudio(),
+    abort: () => pocketClient.cancelAll(),
+    // The client's own promise is returned: the synth keeps the prefetched one alive by identity.
+    synthesize: (text, voice) => {
+      const spoken = pocketClient.synthesize(text, voice);
+      spoken.catch((error) => {
+        if (error.message !== CANCELLED) els.status.textContent = `Voice error: ${error.message}`;
+      });
+      return spoken;
+    },
+  }),
+});
+
 const player = createPlayer({
-  synth: speechSynthesis,
-  createUtterance: (text) => new SpeechSynthesisUtterance(text),
+  synth,
+  createUtterance: (text, voice) => (voice?.neural ? { text } : new SpeechSynthesisUtterance(text)),
   onState: render,
+  schedule: (fn, ms) => {
+    const timer = setTimeout(fn, ms);
+    return () => clearTimeout(timer);
+  },
 });
 
 function render({ status, index, total, chunk }) {
@@ -102,18 +142,44 @@ function saveSettings() {
   }
 }
 
+function selectedVoice() {
+  return resolveVoice(els.voice.value, speechSynthesis.getVoices(), pocket);
+}
+
+// Loading a Pocket TTS voice takes seconds, so it starts when the voice is chosen (once per voice).
+const warmed = new Set();
+function applyVoice() {
+  const voice = selectedVoice();
+  player.setVoice(voice);
+  if (voice?.neural && !warmed.has(voice.id)) {
+    warmed.add(voice.id);
+    pocketClient.warm(voice);
+  }
+}
+
 function fillVoices() {
-  const voices = speechSynthesis.getVoices();
+  const systemVoices = speechSynthesis.getVoices();
   els.voice.replaceChildren(
-    ...voices.map((voice) => {
-      const option = new Option(`${voice.name} (${voice.lang})`, voice.voiceURI);
-      option.lang = voice.lang;
+    ...buildVoiceOptions(systemVoices, pocket).map(({ id, label, lang }) => {
+      const option = new Option(label, id);
+      option.lang = lang;
       return option;
     }),
   );
-  const chosen = findVoice(voices, settings.voiceUri) ?? voices.find((v) => v.default) ?? voices[0] ?? null;
-  els.voice.value = chosen?.voiceURI ?? '';
-  player.setVoice(chosen);
+  const chosen =
+    resolveVoice(settings.voiceUri, systemVoices, pocket) ?? pickDefaultVoice(systemVoices, pocket, navigator.language);
+  els.voice.value = chosen ? voiceId(chosen) : '';
+  applyVoice();
+}
+
+// Without the host (not registered, Letter's runtime missing) only the system voices are listed.
+async function loadPocketVoices() {
+  try {
+    pocket = pocketVoices(await pocketClient.status());
+  } catch {
+    pocket = [];
+  }
+  fillVoices();
 }
 
 els.file.addEventListener('change', () => els.file.files[0] && openFile(els.file.files[0]));
@@ -132,7 +198,7 @@ els.rate.addEventListener('input', () => {
 });
 els.voice.addEventListener('change', () => {
   settings = { ...settings, voiceUri: els.voice.value };
-  player.setVoice(findVoice(speechSynthesis.getVoices(), settings.voiceUri));
+  applyVoice();
   saveSettings();
 });
 
@@ -149,10 +215,11 @@ document.addEventListener('drop', (event) => {
   event.preventDefault();
   if (event.dataTransfer?.files[0]) openFile(event.dataTransfer.files[0]);
 });
-window.addEventListener('pagehide', () => speechSynthesis.cancel());
+window.addEventListener('pagehide', () => synth.cancel());
 
 els.rate.value = String(settings.rate);
 els.rateOut.textContent = `${settings.rate.toFixed(1)}×`;
 player.setRate(settings.rate);
 speechSynthesis.addEventListener('voiceschanged', fillVoices);
 fillVoices();
+loadPocketVoices();

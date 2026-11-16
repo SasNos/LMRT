@@ -104,6 +104,10 @@ select {
   cursor: pointer;
 }
 
+[hidden] {
+  display: none;
+}
+
 button:disabled {
   opacity: 0.5;
   cursor: default;
